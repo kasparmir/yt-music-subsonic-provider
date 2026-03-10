@@ -1,5 +1,6 @@
-Flask
-ytmusicapi
-yt-dlp
-Werkzeug
-requests
+Flask>=3.0
+Werkzeug>=3.0
+ytmusicapi>=1.7
+yt-dlp>=2024.1.1
+requests>=2.31
+PyYAML>=6.0      # optional – only needed when config.yaml is used

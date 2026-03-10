@@ -1,72 +1,88 @@
+"""
+services/scrobble_service.py — lightweight listen-history backed by SQLite.
+"""
+import logging
+import sqlite3
+import threading
 from datetime import datetime
-import json
-import os
+from typing import Optional
+
+log = logging.getLogger(__name__)
+
+_DB_FILE = "scrobbles.db"
+_SCHEMA  = """
+CREATE TABLE IF NOT EXISTS scrobbles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id    TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    artist      TEXT    NOT NULL,
+    album       TEXT,
+    album_id    TEXT,
+    played_at   TEXT    NOT NULL,
+    submission  INTEGER NOT NULL DEFAULT 1
+);
+"""
+
 
 class ScrobbleService:
-    def __init__(self, db_file='scrobbles.json'):
-        self.db_file = db_file
-        self.scrobbles = self.load_scrobbles()
-    
-    def load_scrobbles(self):
-        """Načtení historie z disku"""
-        if os.path.exists(self.db_file):
-            try:
-                with open(self.db_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading scrobbles: {e}")
-                return []
-        return []
-    
-    def save_scrobbles(self):
-        """Uložení historie na disk"""
-        try:
-            with open(self.db_file, 'w', encoding='utf-8') as f:
-                json.dump(self.scrobbles, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Error saving scrobbles: {e}")
-    
-    def add_scrobble(self, song_id, title, artist, album, album_id=None, submission=True):
-        """Přidání záznamu o přehrání"""
-        scrobble = {
-            "id": song_id,
-            "title": title,
-            "artist": artist,
-            "album": album,
-            "albumId": album_id,
-            "time": datetime.now().isoformat(),
-            "submission": submission
-        }
-        
-        self.scrobbles.insert(0, scrobble)  # Přidáme na začátek
-        
-        # Omezíme na posledních 1000 záznamů
-        if len(self.scrobbles) > 1000:
-            self.scrobbles = self.scrobbles[:1000]
-        
-        self.save_scrobbles()
-        print(f"[Scrobble] Added: {title} by {artist}")
-        return True
-    
-    def get_now_playing(self):
-        """Získání aktuálně přehrávané skladby (ne submission)"""
-        for scrobble in self.scrobbles[:10]:  # Hledáme v posledních 10
-            if not scrobble.get('submission', True):
-                return scrobble
-        return None
-    
-    def get_scrobbles(self, username=None, limit=50, since=None):
-        """Získání historie přehrání"""
-        filtered = self.scrobbles
-        
-        if since:
-            try:
-                since_dt = datetime.fromisoformat(since)
-                filtered = [s for s in filtered if datetime.fromisoformat(s['time']) >= since_dt]
-            except:
-                pass
-        
-        return filtered[:limit]
+    def __init__(self, db_file: str = _DB_FILE):
+        self._db   = db_file
+        self._lock = threading.Lock()
+        self._init_db()
 
-# Globální instance
+    # ── setup ──────────────────────────────────────────────────────────────
+
+    def _init_db(self):
+        with self._connect() as con:
+            con.executescript(_SCHEMA)
+
+    def _connect(self) -> sqlite3.Connection:
+        con = sqlite3.connect(self._db)
+        con.row_factory = sqlite3.Row
+        return con
+
+    # ── write ──────────────────────────────────────────────────────────────
+
+    def add(self, *, video_id: str, title: str, artist: str,
+            album: str = "", album_id: str = "", submission: bool = True):
+        played_at = datetime.utcnow().isoformat()
+        with self._lock, self._connect() as con:
+            con.execute(
+                """INSERT INTO scrobbles (video_id, title, artist, album, album_id, played_at, submission)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (video_id, title, artist, album, album_id, played_at, int(submission)),
+            )
+            # keep only last 1000 entries
+            con.execute(
+                """DELETE FROM scrobbles WHERE id NOT IN (
+                       SELECT id FROM scrobbles ORDER BY id DESC LIMIT 1000
+                   )"""
+            )
+        log.info("Scrobble: %r by %r (submission=%s)", title, artist, submission)
+
+    # ── read ───────────────────────────────────────────────────────────────
+
+    def get_history(self, limit: int = 50, since: Optional[str] = None) -> list[dict]:
+        query  = "SELECT * FROM scrobbles WHERE submission = 1"
+        params: list = []
+        if since:
+            query  += " AND played_at >= ?"
+            params.append(since)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+
+        with self._connect() as con:
+            rows = con.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_now_playing(self) -> Optional[dict]:
+        """Return the most recent non-submission (now-playing) event."""
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM scrobbles WHERE submission = 0 ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        return dict(row) if row else None
+
+
+# Singleton
 scrobble_service = ScrobbleService()

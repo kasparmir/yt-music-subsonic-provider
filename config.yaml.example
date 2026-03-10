@@ -1,0 +1,33 @@
+# config.yaml — copy this file and edit as needed.
+# The application loads this file automatically if it exists in the working directory.
+
+host: "0.0.0.0"
+port: 5000
+debug: false
+
+# Users: username → password
+users:
+  admin: "admin"
+  # alice: "s3cr3t"
+
+stream:
+  # Seconds a resolved YouTube CDN URL is kept in memory before re-resolving.
+  cache_ttl: 3600
+
+  # true  → audio is piped through this server (supports Range, no CORS issues)
+  # false → 302 redirect to the YouTube CDN URL (faster, but client must reach YT)
+  proxy: true
+
+  # true  → re-encode to mp3 via ffmpeg before sending to the client.
+  #          Requires ffmpeg to be installed and on PATH.
+  #          Useful for clients that don't support opus/m4a.
+  ffmpeg_transcode: false
+  ffmpeg_bitrate: "192k"
+
+  # Number of upcoming tracks whose stream URLs are pre-resolved in the
+  # background the moment the current track starts playing.
+  # Higher = less skip latency, more background yt-dlp calls.
+  prefetch_ahead: 2
+
+  # Size of the background thread pool used for prefetching.
+  prefetch_workers: 3

@@ -1,27 +1,43 @@
+"""
+ytmusic-subsonic — Open Subsonic proxy for YouTube Music
+"""
+import logging
 from flask import Flask
-from routes.web import web_bp
-from routes.api import api_bp
-from routes.subsonic import subsonic_bp
+from config import load_config
+from routes.system   import system_bp
+from routes.browsing import browsing_bp
+from routes.search   import search_bp
+from routes.media    import media_bp
+from routes.scrobble import scrobble_bp
 
-app = Flask(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
-# Registrace blueprintů
-app.register_blueprint(web_bp)
-app.register_blueprint(api_bp, url_prefix='/api')
-app.register_blueprint(subsonic_bp, url_prefix='/rest')
+def create_app():
+    cfg = load_config()
+    app = Flask(__name__)
+    app.config.update(cfg)
 
-if __name__ == '__main__':
+    for bp in (system_bp, browsing_bp, search_bp, media_bp, scrobble_bp):
+        app.register_blueprint(bp, url_prefix="/rest")
+
+    return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    cfg = app.config
+    host = cfg.get("HOST", "0.0.0.0")
+    port = cfg.get("PORT", 5000)
+
     print("=" * 60)
-    print("YouTube Music Web Aplikace")
+    print("  ytmusic-subsonic — Open Subsonic proxy for YouTube Music")
     print("=" * 60)
-    print("\nWebové rozhraní: http://localhost:5000")
-    print("\nOpenSubsonic API:")
-    print("  URL: http://localhost:5000/rest")
-    print("  Uživatel: admin")
-    print("  Heslo: admin")
-    print("\nPro Music Assistant:")
-    print("  Server: http://localhost:5000/rest")
-    print("  Username: admin")
-    print("  Password: admin")
+    print(f"  Listening : http://{host}:{port}")
+    print(f"  Subsonic  : http://{host}:{port}/rest")
+    print(f"  Username  : {list(cfg['USERS'].keys())[0]}")
     print("=" * 60)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+
+    app.run(host=host, port=port, debug=cfg.get("DEBUG", False))

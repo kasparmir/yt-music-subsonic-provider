@@ -1,4 +1,3 @@
 config.yaml
 .vscode
 __pycache__
-tuya2mqtt.db

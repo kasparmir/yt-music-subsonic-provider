@@ -1,139 +1,167 @@
-# YouTube Music Web Aplikace s OpenSubsonic API
+# ytmusic-subsonic
 
-Webová aplikace pro streamování hudby z YouTube Music s podporou OpenSubsonic API pro integraci s Music Assistant.
+An **Open Subsonic API proxy** for YouTube Music.  
+Add it to [Music Assistant](https://music-assistant.io) (or any Subsonic client) and browse/play YouTube Music without a Google account.
 
-## Funkce
+---
 
-- 🎵 Vyhledávání skladeb, interpretů, alb a playlistů
-- 🎧 Přehrávání hudby přímo z YouTube Music
-- 📱 Responzivní webové rozhraní
-- 🔌 OpenSubsonic API pro Music Assistant
-- 🚫 Bez reklam
-- 🔓 Bez potřeby API klíčů nebo přihlášení
+## Features
 
-## Struktura projektu
+| Feature | Details |
+|---|---|
+| No Google account needed | Uses `ytmusicapi` in unauthenticated mode |
+| Proxy streaming | Audio piped through this server (Range requests supported) |
+| Optional ffmpeg transcode | Re-encode to mp3 on the fly |
+| Cover-art proxy | Images served locally — no CORS issues for clients |
+| SQLite scrobble history | Light listen-history stored in `scrobbles.db` |
+| YAML + env-var config | Easy deployment in Docker / systemd |
 
-```
-ytmusic-app/
-├── app.py                      # Hlavní aplikace
-├── config.py                   # Konfigurace
-├── requirements.txt            # Závislosti
-├── utils/
-│   ├── __init__.py
-│   ├── auth.py                 # Autentizace
-│   └── subsonic_helper.py      # Subsonic helpers
-├── services/
-│   ├── __init__.py
-│   └── ytmusic_service.py      # YouTube Music služba
-└── routes/
-    ├── __init__.py
-    ├── web.py                  # Web rozhraní
-    ├── api.py                  # REST API
-    └── subsonic.py             # OpenSubsonic API
-```
+---
 
-## Instalace
-
-### 1. Vytvoření struktury adresářů
+## Quick start
 
 ```bash
-mkdir ytmusic-app
-cd ytmusic-app
-mkdir utils services routes
-touch utils/__init__.py services/__init__.py routes/__init__.py
-```
-
-### 2. Instalace závislostí
-
-```bash
+# 1. Install dependencies
 pip install -r requirements.txt
-```
 
-### 3. Spuštění aplikace
+# 2. (Optional) copy and edit the example config
+cp config.yaml.example config.yaml
 
-```bash
+# 3. Run
 python app.py
 ```
 
-Aplikace bude dostupná na `http://localhost:5000`
+The server starts on **http://0.0.0.0:5000** by default.
 
-## Připojení do Music Assistant
+---
 
-1. Otevřete Music Assistant
-2. Přejděte do Settings → Music Providers
-3. Přidejte nový provider typu "Subsonic"
-4. Zadejte následující údaje:
-   - **Server URL:** `http://localhost:5000/rest` (nebo IP adresu serveru)
-   - **Username:** `admin`
-   - **Password:** `admin`
-5. Uložte a otestujte připojení
+## Connecting Music Assistant
 
-## Konfigurace
+1. Open Music Assistant → **Settings → Music Providers → Add Provider**
+2. Choose **Subsonic / OpenSubsonic**
+3. Fill in:
+   - **Server URL**: `http://<your-server-ip>:5000/rest`
+   - **Username**: `admin`
+   - **Password**: `admin`
+4. Save and test the connection.
 
-V souboru `config.py` můžete změnit:
+---
 
-```python
-USERS = {
-    "admin": {
-        "password": "vaše_heslo",
-        ...
-    }
-}
+## Configuration
+
+### config.yaml (recommended)
+
+```yaml
+host: "0.0.0.0"
+port: 5000
+debug: false
+
+users:
+  admin: "yourpassword"
+
+stream:
+  cache_ttl: 3600          # seconds before re-resolving a CDN URL
+  proxy: true              # pipe audio through this server
+  ffmpeg_transcode: false  # re-encode to mp3 via ffmpeg
+  ffmpeg_bitrate: "192k"
 ```
 
-## Podporované OpenSubsonic endpointy
+### Environment variables (override config.yaml)
 
-- `/rest/ping` - Ping server
-- `/rest/getLicense` - Informace o licenci
-- `/rest/getMusicFolders` - Seznam hudebních složek
-- `/rest/search3` - Vyhledávání
-- `/rest/getArtist` - Detail umělce
-- `/rest/getAlbum` - Detail alba
-- `/rest/getSong` - Detail skladby
-- `/rest/stream` - Stream audio
-- `/rest/getCoverArt` - Obrázky
+| Variable | Default | Description |
+|---|---|---|
+| `YTM_HOST` | `0.0.0.0` | Bind address |
+| `YTM_PORT` | `5000` | Port |
+| `YTM_DEBUG` | `false` | Flask debug mode |
+| `YTM_ADMIN_PASSWORD` | `admin` | Password for the `admin` user |
+| `CONFIG_PATH` | `config.yaml` | Path to the YAML config file |
 
-## Webové rozhraní
+---
 
-Aplikace obsahuje také webové rozhraní dostupné na `http://localhost:5000` kde můžete:
-- Vyhledávat skladby, interprety, alba
-- Přehrávat hudbu
-- Procházet výsledky
+## Streaming modes
 
-## Požadavky
+### `proxy: true` (default)
+Audio bytes are fetched from YouTube CDN and piped through this server.  
+Supports **HTTP Range requests** so clients can seek without re-buffering.
 
-- Python 3.8+
-- Flask
-- ytmusicapi
-- yt-dlp
+### `proxy: false`
+The server returns a `302 redirect` to the YouTube CDN URL.  
+Faster (one less hop) but requires the client to be able to reach YouTube directly.
 
-## Poznámky
+### `ffmpeg_transcode: true`
+Requires `ffmpeg` on `PATH`.  
+Re-encodes the audio stream to mp3 before sending it.  
+Useful for clients that don't support opus or m4a containers.
 
-- Aplikace je určena pro osobní použití
-- Neobsahuje žádné API klíče - využívá veřejné YouTube Music API
-- Streaming může být pomalý v závislosti na rychlosti internetu
-- Cover arty jsou stahovány v vysokém rozlišení (600x600px)
+---
 
-## Řešení problémů
+## Project structure
 
-### Music Assistant nemůže najít server
-- Ujistěte se, že používáte správnou IP adresu
-- Zkontrolujte, že port 5000 není blokován firewallem
-- Použijte `http://` (ne `https://`)
+```
+ytmusic-subsonic/
+├── app.py                  # Application factory & entry point
+├── config.py               # Config loader (YAML + env vars)
+├── config.yaml.example     # Annotated example configuration
+├── requirements.txt
+├── utils/
+│   ├── auth.py             # Subsonic token-auth + plain-password auth
+│   └── response.py         # ok() / err() response helpers
+├── services/
+│   ├── ytmusic_client.py   # Unauthenticated ytmusicapi wrapper
+│   ├── mapper.py           # YTMusic dicts → Subsonic-shaped dicts
+│   ├── stream_service.py   # yt-dlp URL resolver + proxy/transcode
+│   └── scrobble_service.py # SQLite-backed listen history
+└── routes/
+    ├── system.py           # ping, getLicense, getMusicFolders, stubs
+    ├── search.py           # search3
+    ├── browsing.py         # getArtist, getAlbum, getSong, getTopSongs, …
+    ├── media.py            # stream, getCoverArt
+    └── scrobble.py         # scrobble, getNowPlaying, getScrobbles
+```
 
-### Skladby se nepřehrávají
-- Zkontrolujte, že máte funkční připojení k internetu
-- Některé skladby mohou být geograficky omezené
-- Zkuste restartovat aplikaci
+---
 
-### Chyby při vyhledávání
-- Zkontrolujte konzoli pro detailní chybové zprávy
-- Ujistěte se, že ytmusicapi je správně nainstalováno
+## Supported endpoints
 
-## Licence
+### System
+- `GET /rest/ping`
+- `GET /rest/getLicense`
+- `GET /rest/getMusicFolders`
+- `GET /rest/getOpenSubsonicExtensions`
+- `GET /rest/getArtists` *(returns empty — no persistent library)*
+- `GET /rest/getPlaylists` *(stub)*
+- `GET /rest/getStarred2` *(stub)*
 
-Projekt je poskytován "tak jak je" pro vzdělávací účely.
+### Search
+- `GET /rest/search3?query=…`
 
-## Autor
+### Browsing
+- `GET /rest/getArtist?id=<browseId>`
+- `GET /rest/getArtistInfo2?id=<browseId>`
+- `GET /rest/getAlbum?id=<browseId>`
+- `GET /rest/getAlbumInfo2?id=<browseId>`
+- `GET /rest/getSong?id=<videoId>`
+- `GET /rest/getTopSongs?artist=…`
 
-Vytvořeno pomocí Claude (Anthropic)
+### Media
+- `GET /rest/stream?id=<videoId>`
+- `GET /rest/getCoverArt?id=<videoId|browseId>`
+
+### Scrobbling
+- `GET /rest/scrobble?id=<videoId>&submission=true`
+- `GET /rest/getNowPlaying`
+- `GET /rest/getScrobbles`
+
+---
+
+## Notes
+
+- **Authentication**: Token-auth (`t` + `s` params) and plain-password (`p` param) are both supported, matching the Subsonic spec.
+- **No persistent music library**: All data is fetched live from YouTube Music on every request.  
+  Album/artist browsing only works after a search surfaces the relevant IDs.
+- **Geographic restrictions**: Some tracks are region-locked on YouTube.
+- **Rate limits**: Heavy use may trigger YouTube's rate-limiting.  Increase `cache_ttl` to reduce requests.
+
+---
+
+*For educational and personal use only.*
